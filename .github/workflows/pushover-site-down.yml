@@ -1,0 +1,55 @@
+# Site down phone alert (Pushover), for the StandToK12/status repository.
+#
+# Copy this file to .github/workflows/pushover-site-down.yml in
+# StandToK12/status. Upptime opens an issue when a site goes down and closes
+# it when the site is back. This sends a Pushover alert for each: emergency
+# priority when down (it repeats every minute until you tap it, for up to an
+# hour), normal priority when back up. It runs on GitHub, so it still works
+# when Firebase or the app is down.
+#
+# Needs two repository secrets in StandToK12/status (Settings, Secrets and
+# variables, Actions): PUSHOVER_USER and PUSHOVER_TOKEN. With either missing,
+# the job skips. Upptime must open issues with its GH_PAT secret (its normal
+# setup); issues opened with the built-in GITHUB_TOKEN don't start workflows.
+#
+# Locked Nov 23, 2026 (claude/weekly-numbers-design.md, Phone alerts).
+
+name: Site down phone alert
+
+on:
+  issues:
+    types: [opened, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    # Upptime's down issues carry the "status" label.
+    if: contains(github.event.issue.labels.*.name, 'status')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Pushover alert
+        env:
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          ACTION: ${{ github.event.action }}
+          TITLE: ${{ github.event.issue.title }}
+          URL: ${{ github.event.issue.html_url }}
+        run: |
+          if [ -z "$PUSHOVER_USER" ] || [ -z "$PUSHOVER_TOKEN" ]; then
+            echo "Pushover secrets are not set. Skipping."
+            exit 0
+          fi
+          if [ "$ACTION" = "opened" ]; then
+            curl -sS --fail https://api.pushover.net/1/messages.json \
+              --form-string "token=$PUSHOVER_TOKEN" --form-string "user=$PUSHOVER_USER" \
+              --form-string "title=Stand To: site down" --form-string "message=$TITLE" \
+              --form-string "priority=2" --form-string "retry=60" --form-string "expire=3600" \
+              --form-string "url=$URL" --form-string "url_title=Open the status issue"
+          else
+            curl -sS --fail https://api.pushover.net/1/messages.json \
+              --form-string "token=$PUSHOVER_TOKEN" --form-string "user=$PUSHOVER_USER" \
+              --form-string "title=Stand To: site back up" --form-string "message=Back up: $TITLE" \
+              --form-string "priority=0" --form-string "url=$URL" --form-string "url_title=Open the status issue"
+          fi
